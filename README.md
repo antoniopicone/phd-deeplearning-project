@@ -52,7 +52,7 @@ Entrambi i casi d'uso usano `datasets/italian.csv`, *Amazon (Massive) Italian Sp
 **Pipeline:**
 *   **Split train / validation / test 70/15/15**, stratificato sulla label, eseguito **prima** di costruire TF-IDF e vocabolario per evitare *data leakage* (13.103 / 2.808 / 2.808 messaggi).
 *   **Baseline:** TF-IDF + Multinomial Naive Bayes. Il numero di feature del TF-IDF (`max_features`) è pari al numero di parole che compaiono **più di una volta** nel training set: **5.567** su 10.266 parole distinte. Le parole viste una sola volta (refusi, nomi propri, numeri) vengono scartate perché non aiutano a generalizzare.
-*   **Reti neurali:** RNN, GRU, LSTM e Transformer (1 strato, 2 teste di attenzione) con embedding e hidden state a 8 dimensioni, sequenze di 20 token.
+*   **Reti neurali:** RNN, GRU, LSTM e Transformer (1 strato, 2 teste di attenzione) con embedding e hidden state a 8 dimensioni. La lunghezza delle sequenze (`MAX_LEN`) è il **95° percentile** del numero di parole dei messaggi di training, così almeno il 95% dei messaggi entra senza essere troncato: **20 token**, che contengono per intero il 96,8% dei messaggi di training. I messaggi più corti vengono completati con il padding, quelli più lunghi troncati.
 *   **Addestramento:** 15 epoche, batch da 64, Adam con learning rate `0.01`, loss `BCEWithLogitsLoss`. A ogni epoca il modello viene valutato sul validation set e si conservano i pesi dell'epoca con la **validation loss minima**; il test set viene usato **una sola volta**, alla fine.
 *   **Metriche:** accuratezza e F1-Score sul test set; tempo di addestramento (solo le epoche, con sincronizzazione della GPU prima di ogni misura); tempo di inferenza dal testo grezzo alla predizione, sia in batch (tutto il test set) sia su un singolo messaggio alla volta.
 *   **Hardware:** GPU Apple (MPS) se disponibile, altrimenti CUDA o CPU.
@@ -89,7 +89,7 @@ Risultati sul test set (2.808 messaggi), GPU Apple MPS:
 | Transformer | 95.7% | 0.959 | 11.0 s | 5.1 µs | 0.83 ms |
 | RNN | 87.7% | 0.885 | 16.3 s | 4.3 µs | 1.56 ms |
 
-Sequenze di 20 token, che contengono per intero circa il 97% dei messaggi.
+Sequenze di 20 token (`MAX_LEN`, 95° percentile delle lunghezze nel training set), che contengono per intero circa il 97% dei messaggi.
 
 **Osservazioni principali:**
 *   **La baseline classica è alla pari con le reti migliori e molto più economica**: TF-IDF + Naive Bayes (96.33%) e LSTM/GRU (96.26%) differiscono di meno di un decimo di punto, ma la baseline si addestra **oltre 100 volte più in fretta** ed è **circa 4 volte più veloce** sul singolo messaggio. Su un compito guidato da parole chiave come lo spam, la complessità delle reti neurali non porta vantaggi.
@@ -159,7 +159,7 @@ I due casi d'uso sono esposti come servizio web, costruito a partire dal codice 
 
 | File | Ruolo |
 |---|---|
-| `estrai_da_notebook.py` | Legge i notebook ed estrae (via `ast`) le definizioni riusabili, cioè `text_to_indices`, `SpamRNN`, `SpamTransformer`, `STOP_WORDS_IT` e `NOME_MODELLO`, nei moduli generati `spamsearch/_estratto_*.py` |
+| `estrai_da_notebook.py` | Legge i notebook ed estrae (via `ast`) le definizioni riusabili, cioè `conta_parole_ripetute`, `text_to_indices`, `SpamRNN`, `SpamTransformer`, `STOP_WORDS_IT` e `NOME_MODELLO`, nei moduli generati `spamsearch/_estratto_*.py` |
 | `spamsearch/` | Libreria: `SpamClassifier` (TF-IDF/Naive Bayes, predefinito, e LSTM, addestrati come nel notebook) e `SemanticSearch` (Sentence-Transformer + TF-IDF) |
 | `prepara_modelli.py` | Addestra il filtro spam e indicizza il database della ricerca, salvando gli artefatti in `artefatti/` |
 | `api/app.py` | API Flask |
