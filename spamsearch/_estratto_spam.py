@@ -1,9 +1,20 @@
 """GENERATO AUTOMATICAMENTE da spam-filter.ipynb con estrai_da_notebook.py: non modificare a mano."""
+from collections import Counter
+
 import torch
 import torch.nn as nn
 
 
-def text_to_indices(testo, vocabolario, max_len=10):
+# Numero di feature del TF-IDF: le parole che compaiono più di una volta nel training set.
+# Le parole viste una sola volta (hapax) sono quasi sempre refusi, nomi propri o numeri:
+# non aiutano a generalizzare e aumentano solo la dimensione dei vettori
+def conta_parole_ripetute(testi, analizzatore):
+    """Numero di parole con più di un'occorrenza nei testi, tokenizzate come fa il TF-IDF."""
+    conteggi = Counter(parola for testo in testi for parola in analizzatore(testo))
+    return sum(1 for n in conteggi.values() if n > 1)
+
+
+def text_to_indices(testo, vocabolario, max_len=20):
     indici = [vocabolario.get(p, vocabolario["<UNK>"]) for p in testo.lower().split()]
     # Padding o troncamento per allineare le lunghezze dei messaggi
     if len(indici) < max_len:
@@ -41,7 +52,7 @@ class SpamRNN(nn.Module):
 
 # Modello Parallelo basato su Transformer (Self-Attention)
 class SpamTransformer(nn.Module):
-    def __init__(self, vocab_size, embedding_dim, nhead, hidden_dim, num_layers, max_len=10):
+    def __init__(self, vocab_size, embedding_dim, nhead, hidden_dim, num_layers, max_len=20):
         super().__init__()
         self.embedding = nn.Embedding(vocab_size, embedding_dim, padding_idx=0)
         self.pos_embedding = nn.Embedding(max_len, embedding_dim)

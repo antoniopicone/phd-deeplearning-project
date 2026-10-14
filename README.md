@@ -51,8 +51,8 @@ Entrambi i casi d'uso usano `datasets/italian.csv`, *Amazon (Massive) Italian Sp
 
 **Pipeline:**
 *   **Split train / validation / test 70/15/15**, stratificato sulla label, eseguito **prima** di costruire TF-IDF e vocabolario per evitare *data leakage* (13.103 / 2.808 / 2.808 messaggi).
-*   **Baseline:** TF-IDF (100 feature) + Multinomial Naive Bayes.
-*   **Reti neurali:** RNN, GRU, LSTM e Transformer (1 strato, 2 teste di attenzione) con embedding e hidden state a 8 dimensioni, sequenze di 10 token.
+*   **Baseline:** TF-IDF + Multinomial Naive Bayes. Il numero di feature del TF-IDF (`max_features`) è pari al numero di parole che compaiono **più di una volta** nel training set: **5.567** su 10.266 parole distinte. Le parole viste una sola volta (refusi, nomi propri, numeri) vengono scartate perché non aiutano a generalizzare.
+*   **Reti neurali:** RNN, GRU, LSTM e Transformer (1 strato, 2 teste di attenzione) con embedding e hidden state a 8 dimensioni, sequenze di 20 token.
 *   **Addestramento:** 15 epoche, batch da 64, Adam con learning rate `0.01`, loss `BCEWithLogitsLoss`. A ogni epoca il modello viene valutato sul validation set e si conservano i pesi dell'epoca con la **validation loss minima**; il test set viene usato **una sola volta**, alla fine.
 *   **Metriche:** accuratezza e F1-Score sul test set; tempo di addestramento (solo le epoche, con sincronizzazione della GPU prima di ogni misura); tempo di inferenza dal testo grezzo alla predizione, sia in batch (tutto il test set) sia su un singolo messaggio alla volta.
 *   **Hardware:** GPU Apple (MPS) se disponibile, altrimenti CUDA o CPU.
@@ -83,18 +83,22 @@ Risultati sul test set (2.808 messaggi), GPU Apple MPS:
 
 | Modello | Accuratezza | F1 | Training | Inferenza batch (per msg) | Inferenza singolo msg |
 |---|---|---|---|---|---|
-| LSTM | **95.5%** | **0.956** | 4.9 s | 2.9 µs | 0.52 ms |
-| GRU | 95.3% | 0.954 | 13.2 s | 3.5 µs | 1.01 ms |
-| RNN | 94.8% | 0.950 | 9.8 s | 3.7 µs | 0.91 ms |
-| Transformer | 94.6% | 0.948 | 9.7 s | 4.3 µs | 0.76 ms |
-| TF-IDF + Naive Bayes | 91.8% | 0.921 | **58 ms** | 3.6 µs | **0.16 ms** |
+| **TF-IDF + Naive Bayes** | **96.3%** | **0.965** | **63 ms** | 4.3 µs | **0.17 ms** |
+| LSTM | 96.3% | 0.963 | 8.6 s | 4.1 µs | 0.63 ms |
+| GRU | 96.3% | 0.963 | 20.6 s | 5.4 µs | 1.87 ms |
+| Transformer | 95.7% | 0.959 | 11.0 s | 5.1 µs | 0.83 ms |
+| RNN | 87.7% | 0.885 | 16.3 s | 4.3 µs | 1.56 ms |
+
+Sequenze di 20 token, che contengono per intero circa il 97% dei messaggi.
 
 **Osservazioni principali:**
-*   Le reti neurali guadagnano **3–4 punti di accuratezza** sulla baseline, ma con un training **circa 100–200 volte più lungo**.
-*   Tutte le reti raggiungono la validation loss minima già alla **2ª–3ª epoca**: le epoche successive portano a overfitting.
+*   **La baseline classica è alla pari con le reti migliori e molto più economica**: TF-IDF + Naive Bayes (96.33%) e LSTM/GRU (96.26%) differiscono di meno di un decimo di punto, ma la baseline si addestra **oltre 100 volte più in fretta** ed è **circa 4 volte più veloce** sul singolo messaggio. Su un compito guidato da parole chiave come lo spam, la complessità delle reti neurali non porta vantaggi.
+*   **Lunghezza delle sequenze:** passando da 10 a 20 token, LSTM e GRU guadagnano circa un punto (da 95.5% a 96.3%), perché con 10 token l'80% dei messaggi veniva troncato. La **RNN classica crolla invece all'87.7%**: su sequenze più lunghe, con il padding in coda, soffre la scomparsa del gradiente, che i gate di LSTM e GRU risolvono.
+*   La scelta del vocabolario del TF-IDF è decisiva. Con sole 100 feature, il valore iniziale, la baseline si fermava al 91.8% e sembrava 3–4 punti sotto le reti. Il confronto però non era equo, perché le reti usano tutto il vocabolario del training set.
+*   Tutte le reti raggiungono la validation loss minima tra la **2ª e la 4ª epoca**: le epoche successive portano a overfitting.
 *   Sulla GPU Apple la **LSTM è la rete più veloce** e la **GRU la più lenta**, contrariamente alle attese teoriche basate sul numero di parametri.
-*   **Inferenza in batch:** tutti i metodi impiegano 3–4 µs per messaggio, perché il costo è dominato dalla tokenizzazione in Python. **Sul singolo messaggio** la baseline è 3–6 volte più veloce, perché le reti pagano l'overhead di trasferimento dei dati verso la GPU.
-*   Le differenze tra le reti (0.2–1 punto) sono dello stesso ordine della variabilità tra un'esecuzione e l'altra sulla GPU: per confronti rigorosi servono più run con seed diversi.
+*   **Inferenza in batch:** tutti i metodi impiegano 4–5 µs per messaggio, perché il costo è dominato dalla tokenizzazione in Python. **Sul singolo messaggio** la baseline è 4–11 volte più veloce, perché le reti pagano l'overhead di trasferimento dei dati verso la GPU.
+*   Le differenze tra le reti migliori (meno di un punto) sono dello stesso ordine della variabilità tra un'esecuzione e l'altra sulla GPU: per confronti rigorosi servono più run con seed diversi.
 
 Grafico prodotto: scatter **accuratezza vs tempo** su tre pannelli (training, inferenza in batch, inferenza a singolo messaggio), in scala logaritmica.
 

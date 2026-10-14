@@ -15,7 +15,7 @@ from sklearn.model_selection import train_test_split
 from sklearn.naive_bayes import MultinomialNB
 from torch.utils.data import DataLoader, TensorDataset
 
-from ._estratto_spam import SpamRNN, text_to_indices
+from ._estratto_spam import SpamRNN, conta_parole_ripetute, text_to_indices
 
 MODELLI = ("naive-bayes", "lstm")
 
@@ -53,7 +53,8 @@ class SpamClassifier:
             X_tmp, y_tmp, test_size=0.50, stratify=y_tmp, random_state=SEED)
 
         # Baseline: TF-IDF + Naive Bayes, addestrati solo sul train
-        vectorizer = TfidfVectorizer(max_features=100)
+        max_features = conta_parole_ripetute(X_train, TfidfVectorizer().build_analyzer())
+        vectorizer = TfidfVectorizer(max_features=max_features)
         classificatore_nb = MultinomialNB().fit(vectorizer.fit_transform(X_train), y_train)
         pred_nb = classificatore_nb.predict(vectorizer.transform(X_test))
 
@@ -99,7 +100,8 @@ class SpamClassifier:
         metriche = {
             "lstm": {"test_accuracy": accuracy_score(y_test, pred_lstm), "test_f1": f1_score(y_test, pred_lstm),
                      "miglior_epoca": miglior_epoca},
-            "naive-bayes": {"test_accuracy": accuracy_score(y_test, pred_nb), "test_f1": f1_score(y_test, pred_nb)},
+            "naive-bayes": {"test_accuracy": accuracy_score(y_test, pred_nb), "test_f1": f1_score(y_test, pred_nb),
+                            "max_features": max_features},
             "dimensioni_split": {"train": len(X_train), "validation": len(X_val), "test": len(X_test)},
         }
         return cls(rete, vocabolario, vectorizer, classificatore_nb, metriche)

@@ -18,8 +18,8 @@ ESTRAZIONI = [
     {
         "notebook": "spam-filter.ipynb",
         "modulo": "spamsearch/_estratto_spam.py",
-        "import": ["import torch", "import torch.nn as nn"],
-        "nomi": ["text_to_indices", "SpamRNN", "SpamTransformer"],
+        "import": ["from collections import Counter", "", "import torch", "import torch.nn as nn"],
+        "nomi": ["conta_parole_ripetute", "text_to_indices", "SpamRNN", "SpamTransformer"],
     },
     {
         "notebook": "semantic-search.ipynb",
