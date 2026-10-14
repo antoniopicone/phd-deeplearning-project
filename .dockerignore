@@ -1,0 +1,9 @@
+.venv
+.git
+_old
+artefatti
+**/__pycache__
+**/.ipynb_checkpoints
+.DS_Store
+datasets/*
+!datasets/italian.csv

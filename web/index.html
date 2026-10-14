@@ -1,0 +1,305 @@
+<!doctype html>
+<html lang="it">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Spam &amp; Ricerca</title>
+<style>
+  :root {
+    --sfondo: #f6f6f4; --superficie: #ffffff; --testo: #1c1c1a; --testo-2: #5c5b57;
+    --bordo: #dcdbd6; --accento: #2a78d6; --spam: #c8382f; --ham: #1d8a5a;
+    --spam-sfondo: #fdecea; --ham-sfondo: #e6f5ee;
+    --json-chiave: #8a3ab9; --json-stringa: #1d7a4f; --json-numero: #b35c00; --json-letterale: #2a78d6;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --sfondo: #161615; --superficie: #1f1f1e; --testo: #eeede9; --testo-2: #a9a8a1;
+      --bordo: #3a3a37; --accento: #4d93e8; --spam: #ec6d64; --ham: #3fbd84;
+      --spam-sfondo: #3b1f1d; --ham-sfondo: #17322a;
+      --json-chiave: #c792ea; --json-stringa: #8bd5a8; --json-numero: #f2a65a; --json-letterale: #82b1ff;
+    }
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--sfondo); color: var(--testo);
+    font: 15px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif;
+  }
+  header { background: var(--superficie); border-bottom: 1px solid var(--bordo); }
+  .contenitore { max-width: 900px; margin: 0 auto; padding: 0 16px; }
+  .barra-titolo { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; padding: 14px 0 0; }
+  h1 { font-size: 19px; margin: 0; }
+  #stato { font-size: 13px; color: var(--testo-2); }
+  nav { display: flex; gap: 4px; margin-top: 10px; }
+  nav a {
+    padding: 8px 14px; color: var(--testo-2); text-decoration: none; font-weight: 600;
+    border-bottom: 3px solid transparent;
+  }
+  nav a.attiva { color: var(--accento); border-bottom-color: var(--accento); }
+  main.contenitore { padding-top: 20px; padding-bottom: 48px; }
+  .vista { display: none; }
+  .vista.attiva { display: grid; gap: 16px; }
+  .scheda { background: var(--superficie); border: 1px solid var(--bordo); border-radius: 10px; padding: 18px; }
+  h2 { font-size: 16px; margin: 0 0 4px; }
+  .nota { margin: 0; color: var(--testo-2); font-size: 13px; }
+  label { display: block; font-size: 13px; color: var(--testo-2); margin: 12px 0 4px; }
+  textarea, input, select {
+    width: 100%; font: inherit; color: var(--testo); background: var(--sfondo);
+    border: 1px solid var(--bordo); border-radius: 6px; padding: 8px 10px;
+  }
+  textarea { min-height: 90px; resize: vertical; }
+  .riga { display: flex; gap: 12px; flex-wrap: wrap; align-items: end; }
+  .riga > .cresce { flex: 3 1 260px; }
+  .riga > .stretto { flex: 1 1 120px; }
+  button {
+    font: inherit; font-weight: 600; color: #fff; background: var(--accento);
+    border: 0; border-radius: 6px; padding: 9px 18px; cursor: pointer;
+  }
+  button.secondario { color: var(--testo); background: transparent; border: 1px solid var(--bordo); font-weight: 500; }
+  button:disabled { opacity: .55; cursor: default; }
+  .azioni { margin-top: 14px; display: flex; gap: 8px; flex-wrap: wrap; }
+  .esempi { margin-top: 8px; display: flex; gap: 6px; flex-wrap: wrap; }
+  .esempi button { font-size: 13px; padding: 3px 10px; }
+
+  .verdetto {
+    display: flex; align-items: center; gap: 14px; padding: 14px 16px; border-radius: 8px; font-weight: 700;
+  }
+  .verdetto.spam { background: var(--spam-sfondo); color: var(--spam); }
+  .verdetto.ham { background: var(--ham-sfondo); color: var(--ham); }
+  .verdetto .grande { font-size: 24px; letter-spacing: .5px; }
+  .verdetto .dettaglio { font-size: 14px; font-weight: 500; color: var(--testo-2); }
+  .barra-prob { height: 8px; background: var(--sfondo); border-radius: 4px; overflow: hidden; margin-top: 10px; }
+  .barra-prob > div { height: 100%; background: var(--spam); }
+  pre.json {
+    margin: 0; padding: 14px; background: var(--sfondo); border: 1px solid var(--bordo); border-radius: 8px;
+    font: 13px/1.5 ui-monospace, SFMono-Regular, Menlo, monospace; overflow-x: auto; white-space: pre-wrap; word-break: break-word;
+  }
+  .json .chiave { color: var(--json-chiave); } .json .stringa { color: var(--json-stringa); }
+  .json .numero { color: var(--json-numero); } .json .letterale { color: var(--json-letterale); }
+
+  .testata-elenco { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; flex-wrap: wrap; }
+  ul.messaggi { list-style: none; margin: 10px 0 0; padding: 0; }
+  ul.messaggi li { display: flex; gap: 12px; padding: 9px 0; border-top: 1px solid var(--bordo); }
+  ul.messaggi li:first-child { border-top: 0; }
+  .indice { flex: 0 0 auto; min-width: 54px; font-size: 13px; color: var(--testo-2); font-variant-numeric: tabular-nums; }
+  .indice strong { color: var(--accento); }
+  .paginazione { display: flex; align-items: center; justify-content: center; gap: 10px; margin-top: 12px; font-size: 13px; color: var(--testo-2); }
+  .paginazione button { padding: 5px 12px; }
+  code { font: 12.5px ui-monospace, SFMono-Regular, Menlo, monospace; background: var(--sfondo); padding: 1px 5px; border-radius: 4px; }
+  .errore { background: var(--spam-sfondo); color: var(--spam); padding: 8px 12px; border-radius: 6px; }
+  .vuoto { color: var(--testo-2); font-size: 13px; }
+</style>
+</head>
+<body>
+<header>
+  <div class="contenitore">
+    <div class="barra-titolo">
+      <h1>Filtro spam &amp; ricerca semantica</h1>
+      <span id="stato">Connessione all'API…</span>
+    </div>
+    <nav>
+      <a href="#spam" data-vista="spam">📊 Controllo spam</a>
+      <a href="#ricerca" data-vista="ricerca">🎯 Messaggi e ricerca</a>
+    </nav>
+  </div>
+</header>
+
+<main class="contenitore">
+  <!-- ===================== VISTA 1: CONTROLLO SPAM ===================== -->
+  <section class="vista" id="vista-spam">
+    <div class="scheda">
+      <h2>Inserisci un messaggio</h2>
+      <p class="nota">Chiama <code>POST /check-spam</code> e mostra la risposta.</p>
+      <form id="form-spam">
+        <label for="testo">Messaggio</label>
+        <textarea id="testo" required placeholder="Scrivi o incolla un messaggio…"></textarea>
+        <div class="esempi">
+          <button type="button" class="secondario" data-esempio="Congratulazioni! Hai vinto un premio di 1000 euro, clicca subito sul link per riscuoterlo!">Esempio spam</button>
+          <button type="button" class="secondario" data-esempio="Ciao Marco, ti ricordo l'appuntamento di domani alle 18 in ufficio.">Esempio ham</button>
+        </div>
+        <label for="modello">Modello</label>
+        <select id="modello">
+          <option value="naive-bayes">TF-IDF + Naive Bayes</option>
+          <option value="lstm">LSTM</option>
+        </select>
+        <div class="azioni"><button type="submit">Controlla</button></div>
+      </form>
+    </div>
+    <div id="esito-spam" aria-live="polite"></div>
+  </section>
+
+  <!-- ===================== VISTA 2: MESSAGGI E RICERCA ===================== -->
+  <section class="vista" id="vista-ricerca">
+    <div class="scheda">
+      <h2>Ricerca semantica</h2>
+      <p class="nota">Chiama <code>POST /search-simil</code> sui messaggi dell'elenco qui sotto.</p>
+      <form id="form-ricerca">
+        <div class="riga">
+          <div class="cresce">
+            <label for="query">Query</label>
+            <input id="query" required placeholder="es. Qual è il prezzo di questa vettura">
+          </div>
+          <div class="stretto">
+            <label for="metodo">Metodo</label>
+            <select id="metodo">
+              <option value="sentence-transformer">Sentence-Transformer</option>
+              <option value="tfidf">TF-IDF</option>
+            </select>
+          </div>
+          <div class="stretto">
+            <label for="top-k">Risultati</label>
+            <input id="top-k" type="number" min="1" max="50" value="10">
+          </div>
+        </div>
+        <div class="azioni">
+          <button type="submit">Cerca</button>
+          <button type="button" class="secondario" id="mostra-elenco" hidden>Torna all'elenco</button>
+        </div>
+      </form>
+    </div>
+
+    <div class="scheda">
+      <div class="testata-elenco">
+        <h2 id="titolo-elenco">Messaggi</h2>
+        <span class="nota" id="info-elenco"></span>
+      </div>
+      <div id="elenco" aria-live="polite"></div>
+      <div class="paginazione" id="paginazione">
+        <button type="button" class="secondario" id="pagina-prec">← Precedente</button>
+        <span id="pagina-info"></span>
+        <button type="button" class="secondario" id="pagina-succ">Successiva →</button>
+      </div>
+    </div>
+  </section>
+</main>
+
+<script>
+  // Le chiamate passano dal proxy nginx: /api/* -> servizio Flask
+  const API = "/api";
+  const $ = (id) => document.getElementById(id);
+  const escape = (s) => String(s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+
+  async function chiamaApi(percorso, opzioni = {}) {
+    const risposta = await fetch(API + percorso, opzioni);
+    const dati = await risposta.json().catch(() => ({ errore: `Risposta non valida (HTTP ${risposta.status})` }));
+    if (!risposta.ok) throw new Error(dati.errore || `Errore HTTP ${risposta.status}`);
+    return dati;
+  }
+  const post = (percorso, corpo) => chiamaApi(percorso, {
+    method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(corpo),
+  });
+
+  // JSON formattato con evidenziazione della sintassi
+  function jsonEvidenziato(oggetto) {
+    return escape(JSON.stringify(oggetto, null, 2)).replace(
+      /(&quot;(?:\\.|[^\\&]|&(?!quot;))*?&quot;)(\s*:)?|\b(true|false|null)\b|-?\d+(?:\.\d+)?(?:[eE][+-]?\d+)?/g,
+      (m, stringa, duePunti, letterale) => {
+        if (stringa) return duePunti ? `<span class="chiave">${stringa}</span>${duePunti}` : `<span class="stringa">${stringa}</span>`;
+        if (letterale) return `<span class="letterale">${m}</span>`;
+        return `<span class="numero">${m}</span>`;
+      });
+  }
+
+  // ---------------------------------------------------------------- navigazione tra le viste
+  function mostraVista() {
+    const vista = location.hash === "#ricerca" ? "ricerca" : "spam";
+    document.querySelectorAll(".vista").forEach((v) => v.classList.toggle("attiva", v.id === `vista-${vista}`));
+    document.querySelectorAll("nav a").forEach((a) => a.classList.toggle("attiva", a.dataset.vista === vista));
+    if (vista === "ricerca" && !elencoCaricato) caricaPagina(1);
+  }
+  window.addEventListener("hashchange", mostraVista);
+
+  // ---------------------------------------------------------------- vista 1: controllo spam
+  document.querySelectorAll("[data-esempio]").forEach((b) =>
+    b.addEventListener("click", () => { $("testo").value = b.dataset.esempio; $("testo").focus(); }));
+
+  $("form-spam").addEventListener("submit", async (ev) => {
+    ev.preventDefault();
+    const bottone = ev.target.querySelector("button[type=submit]");
+    const corpo = { testo: $("testo").value, modello: $("modello").value };
+    bottone.disabled = true;
+    try {
+      const d = await post("/check-spam", corpo);
+      const spam = d.etichetta === "spam";
+      $("esito-spam").innerHTML = `
+        <div class="scheda">
+          <h2>Risultato</h2>
+          <div class="verdetto ${d.etichetta}" style="margin-top:10px">
+            <span class="grande">${spam ? "🚫 SPAM" : "✅ HAM"}</span>
+            <span class="dettaglio">${spam ? "messaggio indesiderato" : "messaggio legittimo"} ·
+              probabilità di spam <strong>${(d.probabilita_spam * 100).toFixed(1)}%</strong> · ${escape(d.modello)} · ${d.tempo_ms} ms</span>
+          </div>
+          <div class="barra-prob" title="Probabilità di spam"><div style="width:${(d.probabilita_spam * 100).toFixed(1)}%"></div></div>
+        </div>
+        <div class="scheda">
+          <h2>Risposta JSON</h2>
+          <p class="nota" style="margin-bottom:10px">POST /check-spam · corpo: <code>${escape(JSON.stringify(corpo))}</code></p>
+          <pre class="json">${jsonEvidenziato(d)}</pre>
+        </div>`;
+    } catch (e) {
+      $("esito-spam").innerHTML = `<div class="errore">${escape(e.message)}</div>`;
+    } finally {
+      bottone.disabled = false;
+    }
+  });
+
+  // ---------------------------------------------------------------- vista 2: elenco messaggi e ricerca
+  let elencoCaricato = false;
+  let paginaCorrente = 1;
+
+  // `etichetta` è HTML generato da noi (numeri), `testo` arriva dall'API e viene sempre sanificato
+  function disegnaMessaggi(righe) {
+    if (!righe.length) return `<p class="vuoto">Nessun messaggio.</p>`;
+    return `<ul class="messaggi">${righe.map((r) => `<li><span class="indice">${r.etichetta}</span><span>${escape(r.testo)}</span></li>`).join("")}</ul>`;
+  }
+
+  async function caricaPagina(pagina) {
+    try {
+      const d = await chiamaApi(`/messaggi?pagina=${pagina}&per_pagina=20`);
+      elencoCaricato = true;
+      paginaCorrente = d.pagina;
+      $("titolo-elenco").textContent = "Messaggi del database";
+      $("info-elenco").textContent = `${d.totale.toLocaleString("it-IT")} messaggi`;
+      $("elenco").innerHTML = disegnaMessaggi(d.messaggi.map((m) => ({ etichetta: `#${m.doc_id}`, testo: m.documento })));
+      $("pagina-info").textContent = `Pagina ${d.pagina} di ${d.pagine}`;
+      $("pagina-prec").disabled = d.pagina <= 1;
+      $("pagina-succ").disabled = d.pagina >= d.pagine;
+      $("paginazione").hidden = false;
+      $("mostra-elenco").hidden = true;
+    } catch (e) {
+      $("elenco").innerHTML = `<div class="errore">${escape(e.message)}</div>`;
+    }
+  }
+  $("pagina-prec").addEventListener("click", () => caricaPagina(paginaCorrente - 1));
+  $("pagina-succ").addEventListener("click", () => caricaPagina(paginaCorrente + 1));
+  $("mostra-elenco").addEventListener("click", () => caricaPagina(paginaCorrente));
+
+  $("form-ricerca").addEventListener("submit", async (ev) => {
+    ev.preventDefault();
+    const bottone = ev.target.querySelector("button[type=submit]");
+    bottone.disabled = true;
+    try {
+      const d = await post("/search-simil", {
+        query: $("query").value, metodo: $("metodo").value, top_k: parseInt($("top-k").value, 10),
+      });
+      $("titolo-elenco").textContent = `Risultati per “${d.query}”`;
+      $("info-elenco").textContent = `${d.risultati.length} più simili · ${d.metodo} · ${d.tempo_ms} ms`;
+      $("elenco").innerHTML = disegnaMessaggi(d.risultati.map((r) => ({
+        etichetta: `<strong>${r.rank}.</strong> ${r.score.toFixed(3)}`, testo: r.documento,
+      })));
+      $("paginazione").hidden = true;
+      $("mostra-elenco").hidden = false;
+    } catch (e) {
+      $("elenco").innerHTML = `<div class="errore">${escape(e.message)}</div>`;
+    } finally {
+      bottone.disabled = false;
+    }
+  });
+
+  // ---------------------------------------------------------------- avvio
+  chiamaApi("/health")
+    .then(() => { $("stato").textContent = "🟢 API attiva"; })
+    .catch(() => { $("stato").textContent = "🔴 API non raggiungibile"; });
+  mostraVista();
+</script>
+</body>
+</html>

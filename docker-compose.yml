@@ -1,0 +1,31 @@
+services:
+  api:
+    build: .
+    image: spamsearch-api
+    container_name: spamsearch-api
+    ports:
+      - "${PORTA:-8000}:8000"
+    environment:
+      # Il Sentence-Transformer è già nell'immagine: nessun download all'avvio
+      HF_HUB_OFFLINE: "1"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
+      interval: 30s
+      timeout: 5s
+      start_period: 60s
+      retries: 3
+    restart: unless-stopped
+
+  # Interfaccia web: pagina statica servita da nginx, che inoltra /api/* al servizio api
+  web:
+    image: nginx:1.27-alpine
+    container_name: spamsearch-web
+    ports:
+      - "${PORTA_WEB:-8080}:80"
+    volumes:
+      - ./web/index.html:/usr/share/nginx/html/index.html:ro
+      - ./web/nginx.conf:/etc/nginx/conf.d/default.conf:ro
+    depends_on:
+      api:
+        condition: service_healthy
+    restart: unless-stopped

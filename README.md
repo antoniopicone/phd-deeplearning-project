@@ -1,195 +1,203 @@
-# spam-guard
+# Progetto per l'Esame di Advanced Deep Learning: Architetture Neurali a Confronto per l'Elaborazione del Linguaggio Naturale
 
-Classificatore di **sospetto spam** per il mio client di posta (Rust): un servizio REST locale
-che, a ogni nuova email, restituisce `P(spam)`.
+---
 
-Progetto d'esame del corso *Advanced Deep Learning*: confronta un **Transformer piccolo**
-con una baseline **TF-IDF + regressione logistica** e verifica se la differenza di accuracy
-è **statisticamente significativa** (McNemar, bootstrap appaiato, 5×2cv F-test, Cochran's Q).
-Nel banco di prova entrano anche un BERT pre-addestrato, **Jev** (TypeSafe AI) e,
-opzionalmente, un SLM locale.
+## 1. Introduzione e Razionale del Progetto
+Il campo del Natural Language Processing (NLP) ha vissuto nell'ultimo decennio una rivoluzione radicale, transitando da modelli statistici tradizionali e architetture sequenziali ricorsive fino al paradigma dominante basato sulla *Self-Attention* (Transformer).
 
-```
-nuova email ──► client Rust ──POST /v1/classify──► spam-guard (Docker, 127.0.0.1:8088)
-                     ▲                                   │  TF-IDF │ mini-Transformer │ BERT-tiny
-                     └──────── {spam_probability, is_spam} ◄──┘
-```
+Questo progetto d'esame nasce con l'obiettivo di mappare empiricamente questo percorso storico e ingegneristico, analizzando il trade-off tra **complessità computazionale**, **efficienza hardware** e **accuratezza semantica**. Il cuore dello studio consiste nel dimostrare che l'algoritmo "più moderno" non è necessariamente sempre l'unica scelta corretta, ma che la progettazione di un sistema di Intelligenza Artificiale deve sempre basarsi su un'attenta analisi del caso d'uso specifico.
 
-## Risultati
+Per fare ciò, il progetto si articola su **due pilastri applicativi opposti** e complementari:
+1. **Caso d'uso 1: Filtro Spam (Classificazione Binaria Leggera)**: un problema guidato da parole chiave e testi brevi, dove si valuta l'efficienza dei modelli computazionalmente leggeri rispetto a quelli pesanti.
+2. **Caso d'uso 2: Ricerca Semantica (Semantic Textual Similarity)**: un problema complesso in cui il significato prescinde dalle singole parole utilizzate, dove si analizza la capacità delle reti di mappare i concetti in uno spazio geometrico multidimensionale.
 
-SpamAssassin Public Corpus, 5855 email dopo la deduplicazione (30% spam), split stratificato
-70/15/15, test set di 879 email. Training su CPU (2 core); su GPU i tempi scendono di 10–30×.
+---
 
-| Modello | Parametri | Accuracy (IC95%) | MCC | FPR | Training |
+## 2. Tecnologie a Confronto
+Il progetto implementa e analizza quattro approcci fondamentali, ciascuno rappresentante di un'epoca storica specifica, più un modello pre-addestrato usato come riferimento nel secondo caso d'uso.
+
+### A. TF-IDF (L'approccio Statistico Classico)
+*   **Meccanismo:** Trasforma il testo in una matrice di frequenze pesata (*Term Frequency - Inverse Document Frequency*). Nel filtro spam è seguito da un classificatore **Naive Bayes**, che sfrutta il teorema di Bayes ipotizzando l'indipendenza condizionale tra le parole (*Bag of Words*); nella ricerca semantica i vettori TF-IDF vengono confrontati direttamente con la *Cosine Similarity*.
+*   **Ruolo nel progetto:** Funge da *baseline*. Dimostra l'efficacia dei metodi deterministici basati sull'occorrenza lessicale pura, privi di nozione di ordine o sintassi.
+
+### B. Recurrent Neural Networks (RNN Classica)
+*   **Meccanismo:** Introduce per la prima volta un ciclo di feedback temporale per elaborare sequenze, aggiornando un *Hidden State* passo dopo passo.
+*   **Ruolo nel progetto:** Evidenzia storicamente l'introduzione della memoria nel Deep Learning, ma funge anche da esempio didattico per il fenomeno della scomparsa del gradiente, mostrando l'incapacità di preservare informazioni su sequenze lunghe (a causa delle derivate nella backward pass).
+
+### C. LSTM (Long Short-Term Memory) & GRU (Gated Recurrent Unit)
+*   **Meccanismo:** Varianti avanzate delle RNN. La **LSTM** introduce il *Cell State* (un nastro trasportatore lineare per l'errore) regolato da tre porte logiche (Forget, Input, Output). La **GRU** semplifica questa struttura fondendo i flussi in un unico *Hidden State* gestito da sole due porte (Update, Reset).
+*   **Ruolo nel progetto:** Rappresentano l'apice del Deep Learning sequenziale e mostrano come si risolve il problema della scomparsa del gradiente. In teoria la GRU, con circa il 25% di parametri in meno, dovrebbe addestrarsi più velocemente della LSTM: gli esperimenti mostrano che **sulla GPU Apple (MPS) accade il contrario** (vedi §5), perché la velocità reale dipende anche da quanto è ottimizzata l'implementazione di ciascun layer sull'hardware.
+
+### D. Transformer (Encoder-only Architecture)
+*   **Meccanismo:** Elimina completamente i cicli ricorrenti e la natura sequenziale dell'elaborazione. Introduce il meccanismo di *Self-Attention* (Scaled Dot-Product Attention) combinato con i *Positional Embeddings* per analizzare le relazioni tra tutte le parole della frase contemporaneamente (in parallelo).
+*   **Ruolo nel progetto:** Rappresenta lo stato dell'arte del Deep Learning parallelo e bidirezionale. Il progetto mostra che l'architettura da sola non basta: un Transformer piccolo e addestrato da zero non supera le reti ricorrenti nello spam filter, mentre lo stesso tipo di architettura, **pre-addestrata** su grandi quantità di testo, domina nella ricerca semantica.
+
+### E. Sentence-Transformer pre-addestrato (solo Caso d'Uso 2)
+*   **Modello:** [`paraphrase-multilingual-MiniLM-L12-v2`](https://huggingface.co/sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2): Transformer a 12 strati, embedding a 384 dimensioni, pre-addestrato su testi in oltre 50 lingue (italiano compreso) e poi addestrato con una loss contrastiva su milioni di coppie di parafrasi.
+*   **Ruolo nel progetto:** Termine di confronto per mostrare cosa serve, oltre all'architettura, per ottenere embedding che catturano il significato: pre-training su larga scala e un obiettivo di addestramento semantico.
+
+---
+
+## 3. Dataset
+Entrambi i casi d'uso usano `datasets/italian.csv`, *Amazon (Massive) Italian Spam Collection Dataset*: 18.719 messaggi brevi in italiano con etichetta `labels` (1 = spam, 0 = ham). Il dataset è **bilanciato**: 9.604 spam e 9.115 ham.
+
+---
+
+## 4. I Due Casi d'Uso
+
+### 📊 Caso d'Uso 1: Lo Spam Filter: [`spam-filter.ipynb`](spam-filter.ipynb)
+*   **Razionale:** Dimostrare che per compiti di classificazione semplici e circoscritti, l'approccio statistico classico (TF-IDF) o le reti leggere raggiungono metriche eccellenti con una frazione del costo computazionale.
+*   **Focus per l'esame:** Analisi dell'efficienza e della sostenibilità hardware: accuratezza confrontata con tempo di addestramento e tempo di inferenza.
+
+**Pipeline:**
+*   **Split train / validation / test 70/15/15**, stratificato sulla label, eseguito **prima** di costruire TF-IDF e vocabolario per evitare *data leakage* (13.103 / 2.808 / 2.808 messaggi).
+*   **Baseline:** TF-IDF (100 feature) + Multinomial Naive Bayes.
+*   **Reti neurali:** RNN, GRU, LSTM e Transformer (1 strato, 2 teste di attenzione) con embedding e hidden state a 8 dimensioni, sequenze di 10 token.
+*   **Addestramento:** 15 epoche, batch da 64, Adam con learning rate `0.01`, loss `BCEWithLogitsLoss`. A ogni epoca il modello viene valutato sul validation set e si conservano i pesi dell'epoca con la **validation loss minima**; il test set viene usato **una sola volta**, alla fine.
+*   **Metriche:** accuratezza e F1-Score sul test set; tempo di addestramento (solo le epoche, con sincronizzazione della GPU prima di ogni misura); tempo di inferenza dal testo grezzo alla predizione, sia in batch (tutto il test set) sia su un singolo messaggio alla volta.
+*   **Hardware:** GPU Apple (MPS) se disponibile, altrimenti CUDA o CPU.
+
+### 🎯 Caso d'Uso 2: Il Motore di Ricerca Semantica: [`semantic-search.ipynb`](semantic-search.ipynb)
+*   **Database:** le frasi *ham* del dataset, senza duplicati (**7.263 documenti**).
+*   **Razionale:** Mostrare i limiti del TF-IDF, che ragiona solo sulle parole in comune e non riconosce i sinonimi ("vettura" ≠ "auto" ≠ "macchina"), e di reti con pesi non addestrati, e mostrare come un Transformer pre-addestrato produca embedding che catturano il significato.
+*   **Metodologia:** Estrazione delle caratteristiche dai modelli (*Feature Extraction*) tramite funzioni dedicate `get_embedding()`, seguita dal calcolo geometrico della *Cosine Similarity* tra la query e ogni documento; si restituiscono i 5 documenti più simili.
+
+**Metodi confrontati:**
+*   **LSTM, GRU e Transformer** (embedding a 16 dimensioni, sequenze di 16 token) con **pesi casuali, non addestrati**: rappresentano l'architettura "nuda", senza alcuna conoscenza del linguaggio. L'embedding è lo stato nascosto all'ultima parola reale (reti ricorrenti) o la media sulle sole parole reali (Transformer), escludendo il padding.
+*   **TF-IDF + Cosine Similarity**, con una lista di *stop words* italiane (articoli, preposizioni, pronomi, interrogativi, dimostrativi).
+*   **Sentence-Transformer pre-addestrato** (vedi §2.E).
+
+**Valutazione della qualità della ricerca (LLM come giudice):**
+1.  **20 query di valutazione** su argomenti presenti nel database, formulate quando possibile con parole diverse da quelle dei documenti, per non avvantaggiare i metodi lessicali.
+2.  **Pooling** (metodo TREC): i primi 5 risultati di tutti i metodi vengono uniti e ogni coppia (query, documento) distinta viene giudicata una sola volta.
+3.  **Giudice:** un LLM locale, `gemma3:12b` via [Ollama](https://ollama.com), assegna un voto di pertinenza 0/1/2 (non / parzialmente / pienamente pertinente), con temperatura 0 e output JSON vincolato. I giudizi sono salvati in cache in `datasets/giudizi_llm.csv`.
+4.  **Metriche:** **P@5**, la quota dei primi 5 risultati pertinenti, e **MRR**, cioè 1 / posizione del primo risultato pertinente. Entrambe sono mediate sulle 20 query, con **intervallo di confidenza al 95%** calcolato con bootstrap sulle query.
+5.  **Validazione del giudice:** su un campione casuale di 50 coppie (`datasets/campione_validazione_giudice.csv`) i voti dell'LLM sono stati confrontati con quelli di un secondo annotatore che non vedeva i voti dell'LLM.
+
+---
+
+## 5. Risultati
+
+### Caso d'Uso 1: Spam Filter
+Risultati sul test set (2.808 messaggi), GPU Apple MPS:
+
+| Modello | Accuratezza | F1 | Training | Inferenza batch (per msg) | Inferenza singolo msg |
 |---|---|---|---|---|---|
-| TF-IDF + LogReg | 100k feature | **98,75%** [97,8; 99,3] | **0,970** | **1,1%** | 9 s |
-| Mini-Transformer da zero | 1,37 M | 98,18% [97,1; 98,9] | 0,957 | 2,0% | 6,5 min |
-| BERT-tiny pre-addestrato | 4,39 M | 96,81% [95,4; 97,8] | 0,924 | 2,1% | 5,6 min |
+| LSTM | **95.5%** | **0.956** | 4.9 s | 2.9 µs | 0.52 ms |
+| GRU | 95.3% | 0.954 | 13.2 s | 3.5 µs | 1.01 ms |
+| RNN | 94.8% | 0.950 | 9.8 s | 3.7 µs | 0.91 ms |
+| Transformer | 94.6% | 0.948 | 9.7 s | 4.3 µs | 0.76 ms |
+| TF-IDF + Naive Bayes | 91.8% | 0.921 | **58 ms** | 3.6 µs | **0.16 ms** |
 
-- **TF-IDF vs mini-Transformer:** McNemar p = 0,18, Δacc −0,57 pp con IC bootstrap [−1,25; +0,11]
-  → sul singolo run la differenza **non è significativa**. Il **5×2cv F-test** (10 addestramenti)
-  dà p = 0,03 con 10 differenze su 10 a favore del TF-IDF: come algoritmo, con ~4000 email,
-  il TF-IDF è leggermente ma sistematicamente migliore.
-- **Cochran's Q** = 13,5 (p = 0,001); dopo Holm è significativa solo TF-IDF vs BERT-tiny (p = 0,006).
-- Le **mappe di attenzione** mostrano che il primo blocco encoder distribuisce l'attenzione in modo
-  uniforme (≈ 1/n): fa una media, cioè un bag-of-words. Con pochi dati il transformer non sfrutta
-  l'ordine delle parole — lo stesso fenomeno di ViT senza pre-training su grandi dataset.
-- Il servizio usa come default il modello con MCC più alto **in validation** (oggi il TF-IDF: ~5 ms/email).
+**Osservazioni principali:**
+*   Le reti neurali guadagnano **3–4 punti di accuratezza** sulla baseline, ma con un training **circa 100–200 volte più lungo**.
+*   Tutte le reti raggiungono la validation loss minima già alla **2ª–3ª epoca**: le epoche successive portano a overfitting.
+*   Sulla GPU Apple la **LSTM è la rete più veloce** e la **GRU la più lenta**, contrariamente alle attese teoriche basate sul numero di parametri.
+*   **Inferenza in batch:** tutti i metodi impiegano 3–4 µs per messaggio, perché il costo è dominato dalla tokenizzazione in Python. **Sul singolo messaggio** la baseline è 3–6 volte più veloce, perché le reti pagano l'overhead di trasferimento dei dati verso la GPU.
+*   Le differenze tra le reti (0.2–1 punto) sono dello stesso ordine della variabilità tra un'esecuzione e l'altra sulla GPU: per confronti rigorosi servono più run con seed diversi.
 
-## Struttura
+Grafico prodotto: scatter **accuratezza vs tempo** su tre pannelli (training, inferenza in batch, inferenza a singolo messaggio), in scala logaritmica.
 
-```
-spam-guard/
-├── notebooks/spam_guard.ipynb   prototipo completo (Jupyter / Colab), già eseguito con output
-├── spamguard/                   libreria condivisa da notebook, script e servizio
-│   ├── data.py                  download SpamAssassin, parsing RFC 822, normalizzazione, split
-│   ├── baseline.py              TF-IDF (parole + n-grammi di caratteri) + LogisticRegression
-│   ├── transformer.py           mini-Transformer encoder in Keras 3 + estrazione attivazioni
-│   ├── pretrained.py            fine-tuning BERT con KerasHub
-│   ├── stats.py                 metriche, McNemar, bootstrap, 5×2cv, Cochran's Q, Holm
-│   ├── external.py              client Jev (TypeSafe) e SLM locale OpenAI-compatibile
-│   └── plotting.py              stile dei grafici
-├── scripts/train.py             pipeline di training riproducibile (CLI, usata anche da Docker)
-├── service/app.py               API REST (FastAPI)
-├── Dockerfile                   build multi-stage: train → serve
-├── docker-compose.yml           servizio su 127.0.0.1:8088
-├── clients/rust/                crate `spamguard-client` + esempio
-├── models/                      artefatti addestrati (generati)
-└── reports/                     predizioni sul test set, diagramma dell'architettura
-```
+### Caso d'Uso 2: Ricerca Semantica
+Per la query *"Qual è il prezzo di questa vettura"*:
+*   **Reti non addestrate:** risultati casuali, senza alcun legame con la query.
+*   **TF-IDF:** "vettura" non compare nel database, quindi l'unica parola utile resta "prezzo" e restituisce frasi su prezzi di smartphone, cibo, ecc.
+*   **Sentence-Transformer:** restituisce frasi su **auto** e **macchine**, pur senza alcuna parola in comune con la query.
 
-## 1. Prototipo: notebook
+**Qualità della ricerca** (20 query, giudice `gemma3:12b`, intervallo di confidenza al 95%):
 
-**Colab** (consigliato per la GPU): carica `notebooks/spam_guard.ipynb`, imposta
-`REPO_URL` nella prima cella con l'URL del repository, *Runtime → Cambia tipo di runtime → GPU*,
-poi *Esegui tutto*. Su GPU si può alzare `PRESET` a `bert_small_en_uncased` o
-`distil_bert_base_multi` (multilingue, per la posta in italiano).
+| Metodo | P@5 | IC 95% | MRR | IC 95% |
+|---|---|---|---|---|
+| Sentence-Transformer | **0.81** | 0.68 – 0.93 | **0.917** | 0.78 – 1.00 |
+| TF-IDF | 0.58 | 0.44 – 0.71 | 0.788 | 0.64 – 0.93 |
+| LSTM (non addestrata) | 0.09 | 0.02 – 0.18 | 0.217 | 0.07 – 0.42 |
+| GRU (non addestrata) | 0.07 | 0.02 – 0.13 | 0.146 | 0.03 – 0.30 |
+| Transformer (non addestrato) | 0.01 | 0.00 – 0.03 | 0.012 | 0.00 – 0.04 |
 
-**In locale:**
+*   Il Sentence-Transformer restituisce in media **4 risultati pertinenti su 5**. Nel P@5 il suo vantaggio sul TF-IDF è netto: gli intervalli di confidenza quasi non si sovrappongono. Nell'MRR la differenza è più contenuta: spesso anche il TF-IDF mette un risultato pertinente in cima.
+*   **Affidabilità del giudice:** con valutazione umana: accordo esatto 88%, accordo pertinente/non pertinente 92%, kappa di Cohen pesato **0.80**. 
 
-```bash
-python -m venv .venv && source .venv/bin/activate
-pip install -r requirements.txt          # serve anche graphviz per il diagramma: apt/brew install graphviz
-jupyter lab notebooks/spam_guard.ipynb
-```
+**Tempi di ricerca** (GPU Apple MPS):
 
-Il notebook scarica da solo lo [SpamAssassin Public Corpus](https://spamassassin.apache.org/old/publiccorpus/)
-in `data/raw/` e contiene, nell'ordine: dati e leakage, baseline TF-IDF, architettura del
-mini-Transformer (diagramma + conteggio parametri), training, **visualizzazione di attivazioni
-e mappe di attenzione**, fine-tuning BERT, confronto statistico, Jev/SLM, classificatore vs LLM,
-parallelismo e GPU, export.
-
-### Aggiungere la propria posta (italiano)
-
-Non esistono grandi corpora pubblici di spam email in italiano. Esporta *Inbox* e *Junk*
-dal client in formato mbox e aggiungili:
-
-```bash
-python scripts/train.py --extra-ham ~/Mail/Inbox.mbox --extra-spam ~/Mail/Junk.mbox \
-                        --pretrained distil_bert_base_multi      # meglio su GPU
-```
-
-## 2. Training da riga di comando
-
-```bash
-python scripts/train.py                      # TF-IDF + mini-Transformer + BERT-tiny → models/
-python scripts/train.py --pretrained ""      # salta il BERT (più veloce)
-```
-
-Il modello di default del servizio viene scelto **sulla validation** (MCC più alto), mai sul test set,
-e scritto in `models/metadata.json`.
-
-## 3. Deploy: Docker + API REST
-
-```bash
-docker compose up -d --build                 # usa i modelli in ./models (es. scaricati da Colab)
-# oppure: addestra DENTRO la build, nessun artefatto locale necessario
-docker build --target serve-trained -t spam-guard:latest .
-```
-
-| Immagine | Comando | Dimensione | Modelli |
-|---|---|---|---|
-| completa | `docker build -t spam-guard .` | ~3,9 GB | TF-IDF, Transformer, BERT, ensemble |
-| slim | `docker build --build-arg REQUIREMENTS=service/requirements-slim.txt -t spam-guard:slim .` | ~0,8 GB | solo TF-IDF (il default attuale), ~3 ms/email |
-
-Nell'immagine slim TensorFlow non c'è: il servizio salta da solo i file `.keras` e lo scrive nel log.
-Se Docker Hub risponde *429 Too Many Requests*:
-`docker build --build-arg PYTHON_IMAGE=mirror.gcr.io/library/python:3.12-slim ...`
-
-Il container gira come utente non root, con filesystem in sola lettura, e la porta è esposta
-**solo su 127.0.0.1**: il servizio è pensato per il client di posta sulla stessa macchina.
-
-### API
-
-| Metodo | Percorso | Descrizione |
+| Fase | Sentence-Transformer | TF-IDF |
 |---|---|---|
-| GET | `/health` | stato e modelli caricati |
-| GET | `/v1/models` | modello di default, data di training, metriche di test |
-| POST | `/v1/classify` | una email: `{subject, body}` oppure `{raw}` (RFC 822 completo) |
-| POST | `/v1/classify/batch` | `{"emails": [...]}`, fino a 256 |
+| Caricamento del modello (una volta) | ~3.5 s | — |
+| Indicizzazione del database (una volta) | ~3 s | 0.03 s |
+| **Ricerca di una query** | **~6 ms** | **~0.5 ms** |
 
-Campi opzionali: `model` (`tfidf` · `transformer` · `pretrained` · `ensemble`) e `threshold` (0–1).
+Il modello pre-addestrato è circa 10 volte più lento del TF-IDF a ogni query, ma 6 ms restano ampiamente adeguati a un uso interattivo. Quasi tutto il tempo è speso nel calcolo dell'embedding della query; il confronto con i 7.263 documenti costa meno di 0.2 ms.
 
-```bash
-curl -s localhost:8088/v1/classify -H 'content-type: application/json' \
-  -d '{"subject":"URGENT: you have WON $1,000,000","body":"Click here to claim your prize now!"}'
-# {"spam_probability":0.997951,"is_spam":true,"threshold":0.5,"model":"tfidf","latency_ms":4.84}
-```
+Grafici prodotti: istogrammi di **P@5 e MRR** per metodo, con barre di errore dell'intervallo di confidenza al 95%.
 
-Documentazione interattiva OpenAPI: <http://127.0.0.1:8088/docs>.
+---
 
-## 4. Integrazione nel client Rust
+## 6. Come Eseguire i Notebook
 
-```toml
-# Cargo.toml del client di posta
-spamguard-client = { path = "../spam-guard/clients/rust" }
-```
+1.  **Ambiente Python** (testato con Python 3.13):
+    ```bash
+    python -m venv .venv && source .venv/bin/activate
+    pip install torch scikit-learn numpy pandas matplotlib sentence-transformers
+    ```
+    Le celle iniziali dei notebook installano comunque le dipendenze necessarie.
+2.  **Spam filter:** eseguire `spam-filter.ipynb` dall'inizio. Il training completo dei 4 modelli richiede circa 1 minuto su GPU Apple.
+3.  **Ricerca semantica:** eseguire `semantic-search.ipynb`. Al primo avvio viene scaricato il Sentence-Transformer (~470 MB).
+4.  **Valutazione con LLM come giudice:** richiede [Ollama](https://ollama.com) in esecuzione con il modello scaricato:
+    ```bash
+    ollama pull gemma3:12b
+    ```
+    I giudizi già calcolati sono in `datasets/giudizi_llm.csv` e non vengono ricalcolati; il giudice viene interrogato solo per le coppie (query, documento) nuove, circa 1.4 s per coppia.
 
-```rust
-use spamguard_client::SpamGuard;
-use std::time::Duration;
+---
 
-let guard = SpamGuard::new("http://127.0.0.1:8088", Duration::from_secs(2))?;
-// alla ricezione (es. dopo IMAP FETCH BODY[])
-if let Some(v) = guard.check_or_allow(&raw_message).await {
-    if v.is_spam { move_to_junk(uid).await?; }
-}   // None = servizio non raggiungibile → fail-open: la mail resta in Inbox
-```
+## 7. Servizio API (Flask + Docker) e Interfaccia Web
 
-Prova veloce: `cd clients/rust && cargo run --example check -- /percorso/messaggio.eml`.
+I due casi d'uso sono esposti come servizio web, costruito a partire dal codice dei notebook, con un'interfaccia web per provarli.
 
-La politica è **fail-open**: se il servizio è giù o lento, la mail non viene bloccata
-(meglio uno spam in Inbox che una mail vera persa).
-
-## 5. Jev e SLM nel banco di prova (opzionale)
-
-```bash
-export TYPESAFE_API_KEY=...                          # Jev, https://docs.typesafe.ai
-export SLM_BASE_URL=http://127.0.0.1:8080/v1          # llama-swap / mlx_lm.server / llama.cpp / Ollama
-export SLM_MODEL=qwen3.5-4b
-```
-
-Il notebook (sezione 7) li valuta zero-shot su un sottoinsieme stratificato di 300 email del
-test set, con McNemar + Holm contro gli altri modelli, e ne misura la latenza. Le risposte
-sono messe in cache in `cache/*.jsonl`. Jev resta **solo** nel banco di prova: il servizio di
-produzione è locale e non invia la posta a terzi.
-
-## 6. Benchmark statistico, in breve
-
-| Situazione | Test |
+| File | Ruolo |
 |---|---|
-| 2 modelli, addestrati una volta, stesso test set | **McNemar** (+ IC bootstrap della differenza) |
-| 2 algoritmi, includendo la variabilità del training | **5×2cv F-test** (Alpaydin) |
-| 3+ modelli sullo stesso test set | **Cochran's Q**, poi McNemar a coppie con **Holm** |
-| più dataset | Wilcoxon (2 modelli), Friedman + Nemenyi (k modelli) |
+| `estrai_da_notebook.py` | Legge i notebook ed estrae (via `ast`) le definizioni riusabili, cioè `text_to_indices`, `SpamRNN`, `SpamTransformer`, `STOP_WORDS_IT` e `NOME_MODELLO`, nei moduli generati `spamsearch/_estratto_*.py` |
+| `spamsearch/` | Libreria: `SpamClassifier` (TF-IDF/Naive Bayes, predefinito, e LSTM, addestrati come nel notebook) e `SemanticSearch` (Sentence-Transformer + TF-IDF) |
+| `prepara_modelli.py` | Addestra il filtro spam e indicizza il database della ricerca, salvando gli artefatti in `artefatti/` |
+| `api/app.py` | API Flask |
+| `web/index.html`, `web/nginx.conf` | Interfaccia web, servita da un container nginx che inoltra le chiamate `/api/*` all'API |
+| `Dockerfile`, `docker-compose.yml` | Due servizi: `api`, un'immagine con PyTorch solo CPU in cui estrazione, addestramento e download del modello avvengono **durante la build**, così all'avvio carica solo modelli già pronti; e `web`, con nginx |
 
-Il documento *"Come fare benchmark tra classificatori"* spiega il perché di ciascuna scelta.
+**Avvio:**
+```bash
+docker compose up --build        # la prima build richiede qualche minuto
+```
+*   **Interfaccia web:** <http://localhost:8080>
+    *   **Controllo spam:** si inserisce un messaggio, si sceglie il modello e si vedono il risultato spam/ham, con la probabilità, e la risposta JSON formattata.
+    *   **Messaggi e ricerca:** l'elenco a pagine dei 7.263 messaggi del database; una ricerca semantica sostituisce l'elenco con i messaggi più simili e il loro punteggio.
+*   **API:** <http://localhost:8000>
 
-## Riferimenti
+Per cambiare le porte: `PORTA_WEB=9080 PORTA=9000 docker compose up`. La porta 5000 non è usata perché su macOS è occupata da AirPlay.
 
-- Vaswani et al. (2017), *Attention Is All You Need*.
-- Devlin et al. (2019), *BERT*; Turc et al. (2019), *Well-Read Students Learn Better* (BERT-tiny/small).
-- Dietterich (1998), *Approximate Statistical Tests for Comparing Supervised Classification Learning Algorithms*.
-- Alpaydin (1999), *Combined 5×2 cv F Test for Comparing Supervised Classification Learning Algorithms*.
-- Demšar (2006), *Statistical Comparisons of Classifiers over Multiple Data Sets*, JMLR.
-- TypeSafe AI, [documentazione di Jev](https://docs.typesafe.ai/introduction).
+**Endpoint:**
+
+| Metodo e percorso | Corpo JSON | Risposta |
+|---|---|---|
+| `POST /check-spam` | `{"testo": "...", "modello": "naive-bayes" \| "lstm"}` (`modello` facoltativo, default `naive-bayes`) | `etichetta` (`spam`/`ham`), `spam`, `probabilita_spam`, `tempo_ms` |
+| `POST /search-simil` | `{"query": "...", "metodo": "sentence-transformer" \| "tfidf", "top_k": 5}` (`metodo` e `top_k` facoltativi; `top_k` tra 1 e 50) | `risultati`: lista di `{rank, score, doc_id, documento}`, più `tempo_ms` |
+| `GET /messaggi?pagina=1&per_pagina=20` | — (`per_pagina` tra 1 e 100) | `messaggi`: lista di `{doc_id, documento}`, più `totale`, `pagina`, `pagine` |
+| `GET /health` | — | stato del servizio e metriche sul test set dei modelli spam |
+
+Esempi:
+```bash
+curl -X POST http://localhost:8000/check-spam -H 'Content-Type: application/json' \
+     -d '{"testo": "Hai vinto un premio di 1000 euro, clicca subito!"}'
+
+curl -X POST http://localhost:8000/search-simil -H 'Content-Type: application/json' \
+     -d '{"query": "Qual è il prezzo di questa vettura", "top_k": 3}'
+```
+
+**Senza Docker:** `pip install -r requirements.txt`, poi `python estrai_da_notebook.py && python prepara_modelli.py` e infine `python -m api.app`. Se si modificano le classi nei notebook, basta rieseguire `estrai_da_notebook.py` per aggiornare la libreria.
+
+---
+
+## 8. Limiti e Sviluppi Futuri
+*   **Più esecuzioni con seed diversi** nello spam filter, per riportare media ± deviazione standard e stabilire se le differenze tra le reti sono significative.
+*   **Curve di apprendimento** (loss di training e validation per epoca) e **early stopping**, dato che i modelli si fermano alla 2ª–3ª epoca.
+*   **Matrici di confusione** e precision/recall separate: in un filtro antispam un falso positivo (messaggio legittimo finito nello spam) pesa più di un falso negativo.
+*   **Addestramento degli embedder** della ricerca semantica su coppie di parafrasi (Cosine Embedding Loss / Contrastive Loss), oppure a partire da word embedding pre-addestrati per l'italiano.
+*   **Più query di valutazione** e **validazione umana** del giudice LLM.
